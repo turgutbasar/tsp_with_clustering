@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+
+	<link href="css/bootstrap.css" rel="stylesheet" type="text/css">
+	<link href="css/colors.css" rel="stylesheet" type="text/css">
+	<link href="css/components.css" rel="stylesheet" type="text/css">
+	<link href="css/icons/fontawesome/styles.min.css" rel="stylesheet" type="text/css">
+	<link href="css/core.min.css" rel="stylesheet" type="text/css">
+	<link href="css/icons/icomoon/styles.css" rel="stylesheet" type="text/css">
+	<link href="css/ol.css" rel="stylesheet" type="text/css">
+	<style>
+	</style>
+	
+
+	<script src="js/jquery.min.js"></script>
+	<script src="js/bootstrap.min.js"></script>
+	<script src="js/lodash.js"></script>
+	<script src="js/uniform.min.js"></script>
+	<script src="js/dataTables.min.js"></script>
+	<script src="js/jquery.ui.js"></script>
+	<script src="js/EkoTable.js"></script>
+	<script src="js/d3.min.js"></script>
+	<script src="js/d3_tooltip.js"></script>
+	<script src="js/ol-debug.js"></script>
+    <script src="js/turf.js"></script>
+    <script src="https://cdn.polyfill.io/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL"></script>
+    <script src="https://cdn.rawgit.com/bjornharrtell/jsts/gh-pages/1.2.0/jsts.min.js"></script>
+	<script>
+	var resultLines=[];
+	$(function () {
+		var geojsonReader = new jsts.io.GeoJSONReader();
+		var geojsonWriter = new jsts.io.GeoJSONWriter()
+			var lines;
+
+		var vectorLayer = new ol.layer.Vector({
+				source : new ol.source.Vector(),
+				style : function (feature, resolution) {
+					var color = feature.get('color') || 'rgba(155,155,155,0.5)';
+					
+					return [new ol.style.Style({
+							fill : new ol.style.Fill({
+								color : color
+							}),
+							stroke : new ol.style.Stroke({
+								color : color,
+								lineDash:[8,1,8],
+								width : 3
+							}),
+							image : new ol.style.Circle({
+								radius : 4,
+								fill : new ol.style.Fill({
+									color : 'black'
+								})
+							})
+						})];
+				}
+			});
+		var map = new ol.Map({
+				layers : [new ol.layer.Tile({
+						source : new ol.source.OSM(),opacity:0.2
+					}), vectorLayer],
+				target : 'map',
+				renderer : 'canvas',
+				view : new ol.View({
+					center : [4119169.2232648884, 4829142.287650757],
+					zoom : 4,
+					maxZoom : 22
+				})
+			});
+
+		$(document).ready(function () {
+			$.getJSON('cubuk.json', function (data) {
+				lines = data;
+
+				_.forEach(data.features, function (x) {
+					var l = turf.lineDistance(x);
+					l = parseInt((l * 1000).toFixed(0));
+					var jstsGeom = geojsonReader.read(x.geometry);
+					var densGeom;
+					jstslength = parseFloat(jstsGeom.getLength().toFixed(5)) + 0.00001;
+					jstsGeom = jsts.simplify.DouglasPeuckerSimplifier.simplify(jstsGeom, jstslength);
+					var kutu;
+					if (30 <= l && l < 35) {
+						densGeom = geojsonWriter.write(jsts.densify.Densifier.densify(jstsGeom, jstslength / 2));
+						x.properties.countKutu = 1;
+					}
+					/*else if (40 <= l && l < 50) {
+					densGeom = geojsonWriter.write(jsts.densify.Densifier.densify(jstsGeom, jstslength / 2));
+					x.properties.countKutu = 2;
+					}/* else if (50 <= l && l < 100) {
+					densGeom = geojsonWriter.write(jsts.densify.Densifier.densify(jstsGeom, jstslength / 3));
+					x.properties.countKutu = 1;
+					} else if (100 <= l && l < 200) {
+					densGeom = geojsonWriter.write(jsts.densify.Densifier.densify(jstsGeom, jstslength / 4));
+					x.properties.countKutu = 2;
+					} */
+					else {
+						densGeom = geojsonWriter.write(jsts.densify.Densifier.densify(jstsGeom, jstslength));
+						x.properties.countKutu = 0;
+					}
+					/*for (var i = 0; i < densGeom.coordinates.length - 1; i++) {
+					var line = turf.lineString([densGeom.coordinates[i], densGeom.coordinates[i + 1]]);
+					line.properties.length = turf.lineDistance(line);
+					resultLines.push(line);
+					}*/
+					x.properties.densGeom = densGeom;
+					x.properties.length = l;
+					resultLines.push(x);
+				});
+				findAllNodes(resultLines);
+
+				$.getJSON('http://localhost:8086/', function (data) {
+					function getRandomColor() {
+						var letters = '0123456789ABCDEF';
+						var color = '#';
+						for (var i = 0; i < 6; i++) {
+							color += letters[Math.floor(Math.random() * 16)];
+						}
+						return color;
+					}
+					debugger;
+					var linnes=[];
+					var colorArray=['red','green','blue','orange'];
+					_.forEach(data.route, function (x,i) {
+						var color = colorArray[i];
+						_.forEach(x, function (y) {
+							y.properties.color=color;
+								linnes.push(y);
+						});
+					});
+					_.forEach(data.nodes,function(x){
+					x.properties.color='black';
+					});
+					vectorLayer.getSource().addFeatures((new ol.format.GeoJSON()).readFeatures({
+							type : "FeatureCollection",
+							features : linnes
+						}, {
+							dataProjection : 'EPSG:4326',
+							featureProjection : 'EPSG:3857'
+						}));
+						vectorLayer.getSource().addFeatures((new ol.format.GeoJSON()).readFeatures({
+							type : "FeatureCollection",
+							features : data.nodes
+						}, {
+							dataProjection : 'EPSG:4326',
+							featureProjection : 'EPSG:3857'
+						}));
+					vectorLayer.getSource().addFeatures((new ol.format.GeoJSON()).readFeatures({
+							type : "FeatureCollection",
+							features : resultLines
+						}, {
+							dataProjection : 'EPSG:4326',
+							featureProjection : 'EPSG:3857'
+						}));
+					var snap = new ol.interaction.Snap({
+							source : vectorLayer.getSource()
+						});
+					map.addInteraction(snap);
+					map.getView().fit(vectorLayer.getSource().getExtent(), map.getSize());
+				});
+
+			});
+		});
+		var decimalFix = 8;
+		function fixedPoint(str) {
+			return _.map(str, function (x) {
+				return parseFloat(parseFloat(x).toFixed(decimalFix));
+			}).join(' ');
+		}
+		function getLineFirstPoint(str) {
+			return _.map(str[0], function (x) {
+				return parseFloat(parseFloat(x).toFixed(decimalFix));
+			}).join(' ');
+		}
+		function getLineLastPoint(str) {
+			str = str;
+			return _.map(str[str.length - 1], function (x) {
+				return parseFloat(parseFloat(x).toFixed(decimalFix));
+			}).join(' ');
+		}
+		var findAllNodes = function (list) {
+			var that = this;
+			var initId = 1;
+			var nodes = {};
+			_.forEach(list, function (x) {
+				delete x.properties.NODE_ID;
+				delete x.properties.START_NODE_ID;
+				delete x.properties.END_NODE_ID;
+			});
+			_.forEach(list, function (x) {
+				if (x.geometry.type == 'Point') {
+					if (x.properties.NODE_ID == undefined) {
+						var wkt = fixedPoint(x.geometry.coordinates);
+						if (nodes[wkt] == undefined) {
+							nodes[wkt] = initId;
+							initId++;
+						}
+						x.properties.NODE_ID = nodes[wkt];
+					}
+				} else if (x.geometry.type == "LineString") {
+					if (x.properties.START_NODE_ID == undefined) {
+						var startWkt = getLineFirstPoint(x.geometry.coordinates);
+						if (nodes[startWkt] == undefined) {
+							nodes[startWkt] = initId;
+							initId++;
+						}
+						x.properties.START_NODE_ID = nodes[startWkt];
+					}
+					if (x.properties.END_NODE_ID == undefined) {
+						var endWkt = getLineLastPoint(x.geometry.coordinates);
+						if (nodes[endWkt] == undefined) {
+							nodes[endWkt] = initId;
+							initId++;
+						}
+						x.properties.END_NODE_ID = nodes[endWkt];
+					}
+
+				}
+			})	;
+			_.forEach(list, function (x) {
+				x.properties.traced = false;
+				delete x.properties.parentID;
+			});
+
+			return nodes;
+		};
+		var selectClick = new ol.interaction.Select({
+				condition : ol.events.condition.click
+			});
+		map.addInteraction(selectClick);
+		var dragBox = new ol.interaction.DragBox({
+				condition : ol.events.condition.platformModifierKeyOnly
+			});
+		selectClick.on("select",
+			function (e) {
+			if (e.selected.length != 0) {
+				var ft = e.selected[0];
+				console.log(ft);
+			}
+		});
+	});
+	</script>
+</head>
+
+<body >
+ <div id="map" class="map"></div>
+</body>
+</html>
