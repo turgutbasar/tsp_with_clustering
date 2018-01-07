@@ -1,5 +1,7 @@
 var _ = require('lodash');
-var turf = require('turf');
+var turf = require('@turf/turf');
+var line_chunk = require('@turf/line-chunk')
+var point = require('turf-point');
 var PathFinder = require('geojson-path-finder');
 var fs = require('fs');
 var geojson = require('./data/cubuk.json');
@@ -7,47 +9,33 @@ var jsonfile = require('jsonfile')
 var fileSystem = require( "fs" );
 var JSONStream = require( "JSONStream" );
 
-var pathFinder = new PathFinder(geojson);
-
 console.log("Number of roads ::" + geojson.features.length);
 var nodes = [];
 var ind = 0;
-_.forEach(geojson.features, function (x) {
-	// It is a main road
-	var dist_of_road = turf.lineDistance(x, 'meters')
-	if (dist_of_road < 50) {
-		return;
-	} else if (dist_of_road < 100) {
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.5), 'meters'))
-	} else if (dist_of_road < 150) {
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.33), 'meters'))
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.66), 'meters'))
-	} else if (dist_of_road < 200) {
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.25), 'meters'))
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.50), 'meters'))
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.75), 'meters'))
-	} else if (dist_of_road < 250) {
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.2), 'meters'))
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.4), 'meters'))
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.6), 'meters'))
-		nodes.push(turf.along(x, Math.round(dist_of_road *0.8), 'meters'))
-	} else {
-		return;
-	}
+geojson.features = _.map(geojson.features, function (x) {
+	// Put bin to the beiging of the road
+	nodes.push({id:ind,coordinate:point(x.geometry.coordinates[0])})
+	ind += 1
+	return x
 });
+
+var pathFinder = new PathFinder(geojson)
+nodes = _.sampleSize(nodes, 1000)
 console.log("Trash Bins ::" + nodes.length)
 jsonfile.writeFileSync('bins.json', nodes);
 
-var pathMatrix = [];
+/*var pathMatrix = [];
 
 _.forEach(nodes, function (x, i) {
 	pathMatrix[i] = []
 	_.forEach(nodes, function (y, j) {
 		if(i<j){
-			var path = pathFinder.findPath(x, y);
-		pathMatrix[i][j] = path;
+			var path = pathFinder.findPath(x.coordinate, y.coordinate);
+			if (path == null)
+				path = {path:[],weight:999999999999999}
+			pathMatrix[i][j] = path;
 		}else if(j>i){
-		pathMatrix[i][j] = pathMatrix[j][i];
+			pathMatrix[i][j] = pathMatrix[j][i];
 		}else{
 			pathMatrix[i][j]={path:[],weight:0};
 		}
@@ -58,8 +46,6 @@ _.forEach(nodes, function (x, i) {
 var transformStream = JSONStream.stringify();
 var outputStream = fileSystem.createWriteStream( "paths.json" );
 
-transformStream.pipe( outputStream );
-
-pathMatrix.forEach( transformStream.write );
-
-transformStream.end();
+transformStream.pipe(outputStream);
+pathMatrix.forEach(transformStream.write);
+transformStream.end();*/
